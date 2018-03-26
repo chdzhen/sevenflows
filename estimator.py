@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 import cv2
 
+
 tf.logging.set_verbosity(tf.logging.INFO)
 def _extract_feature(element):
     """
@@ -90,9 +91,18 @@ def cnn_model_fn(features,mode):
         strides=(1,1),
         padding='valid',
         activation=tf.nn.relu)
+
+    #Pooling layer
+    pool2 = tf.layers.max_pooling2d(
+        inputs=conv2,
+        pool_size=[2,2],
+        strides=(2,2),
+        padding='valid'
+    )
+    
     #Convolutional layer
     conv3 = tf.layers.conv2d(
-        inputs=conv2,
+        inputs=pool2,
         filters=32,
         kernel_size=[3,3],
         strides=(1,1),
@@ -100,14 +110,14 @@ def cnn_model_fn(features,mode):
         activation=tf.nn.relu)
     
     #Pooling layer
-    pool2 = tf.layers.max_pooling2d(
+    pool3 = tf.layers.max_pooling2d(
         inputs=conv3,
         pool_size=[2,2],
         strides=(2,2),
         padding='valid')
 
     #===== layer 3 =====
-    flatten = tf.layers.flatten(inputs=conv3)
+    flatten = tf.layers.flatten(inputs=pool3)
 
     #dense layer 1,a fully connected layer
     dense1 = tf.layers.dense(
@@ -115,10 +125,19 @@ def cnn_model_fn(features,mode):
         units= 512,
         activation=tf.nn.relu,
         use_bias=True)
-    
+    dense1 = tf.layers.dropout(dense1,0.5)
+
+    dense2 = tf.layers.dense(
+        inputs= dense1,
+        units = 256,
+        activation=tf.nn.relu,
+        use_bias=True
+    )
+    dense2 = tf.layers.dropout(dense2,0.2)
+
     #dense layer2,also known as the output layer
     logits = tf.layers.dense(
-        inputs=dense1,
+        inputs=dense2,
         units=17,
         activation=None,
         use_bias=True,
@@ -131,7 +150,7 @@ def cnn_model_fn(features,mode):
     predictions_dict = {
         'class_ids':predict_classes[:tf.newaxis],
         'probabilities':tf.nn.softmax(logits),
-        'logits':logits}
+        'label':features['label']}
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(mode=mode,predictions= predictions_dict)
@@ -142,9 +161,9 @@ def cnn_model_fn(features,mode):
 
     # Compute evaluation metrics
     accuracy, update_op = tf.metrics.accuracy(labels=labels, predictions=predictions_dict['class_ids'], name='accuracy')
-    #batch_acc = tf.reduce_mean(tf.cast(tf.equal(tf.cast(labels, tf.int64), predictions_dict['class_ids']), tf.float32))
-    #tf.summary.scalar('batch_acc', batch_acc)
-    #tf.summary.scalar('streaming_acc', update_op)
+    batch_acc = tf.reduce_mean(tf.cast(tf.equal(tf.cast(labels, tf.int64), predictions_dict['class_ids']), tf.float32))
+    tf.summary.scalar('batch_acc', batch_acc)
+    tf.summary.scalar('streaming_acc', update_op)
     eval_metric_ops = {'accuracy': (accuracy, update_op)}
 
     # mode EVAL
@@ -153,7 +172,7 @@ def cnn_model_fn(features,mode):
 
     # mode TRAIN
     assert mode == tf.estimator.ModeKeys.TRAIN
-    optimizer = tf.train.AdadeltaOptimizer(learning_rate=0.01)
+    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01)
     train_op = optimizer.minimize(loss,global_step=tf.train.get_global_step())
     return tf.estimator.EstimatorSpec(mode,loss=loss,train_op=train_op)
     
@@ -186,8 +205,12 @@ predictions = estimator.predict(input_fn=predict_input_fn)
 for pre_dict in predictions:
     class_id = pre_dict['class_ids']
     probability = pre_dict['probabilities'][class_id]
-    print('class_id')
+    label = pre_dict['label']
+    print("================")
+    print('class_id: ')
     print(class_id)
-    print("probability")
+    print("probability: ")
     print(probability)
+    print("label: ")
+    print(label)
 
