@@ -142,39 +142,38 @@ def cnn_model_fn(features,mode):
         activation=None,
         use_bias=True,
         name='logits')
-    
-    # Compute prdictions
-    predict_classes = tf.argmax(logits,1)
 
-    # Make prediction for PREDICTION mode
-    predictions_dict = {
-        'class_ids':predict_classes[:tf.newaxis],
-        'probabilities':tf.nn.softmax(logits),
-        'label':features['label']}
+    predictions = {
+        # Generate predictions (for PREDICT and EVAL mode)
+        "classes": tf.argmax(input=logits, axis=1),
+        # Add `softmax_tensor` to the graph. It is used for PREDICT and by the
+        # `logging_hook`.
+        "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
+    }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
-        return tf.estimator.EstimatorSpec(mode=mode,predictions= predictions_dict)
-
+        return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
+    
     labels = tf.to_int32(features['label'],name='label_to_int32')
-    onehot_labels = tf.one_hot(labels, 17,on_value=1.0, off_value=0.0,axis=-1)
-    loss = tf.losses.softmax_cross_entropy(onehot_labels, logits, scope='LOSS')
+    #labels = tf.one_hot(labels, 17,on_value=1.0, off_value=0.0,axis=-1)
+    # Calculate Loss (for both TRAIN and EVAL modes)
+    loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
-    # Compute evaluation metrics
-    accuracy, update_op = tf.metrics.accuracy(labels=labels, predictions=predictions_dict['class_ids'], name='accuracy')
-    batch_acc = tf.reduce_mean(tf.cast(tf.equal(tf.cast(labels, tf.int64), predictions_dict['class_ids']), tf.float32))
-    tf.summary.scalar('batch_acc', batch_acc)
-    tf.summary.scalar('streaming_acc', update_op)
-    eval_metric_ops = {'accuracy': (accuracy, update_op)}
+    # Configure the Training Op (for TRAIN mode)
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        train_op = optimizer.minimize(
+            loss=loss,
+            global_step=tf.train.get_global_step())
+        return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
 
-    # mode EVAL
-    if mode == tf.estimator.ModeKeys.EVAL:
-        return tf.estimator.EstimatorSpec(mode,loss=loss,eval_metric_ops=eval_metric_ops)
+    # Add evaluation metrics (for EVAL mode)
+    eval_metric_ops = {
+        "accuracy": tf.metrics.accuracy(
+            labels=labels, predictions=predictions["classes"])}
+    return tf.estimator.EstimatorSpec(
+        mode=mode, loss=loss, eval_metric_ops=eval_metric_ops)
 
-    # mode TRAIN
-    assert mode == tf.estimator.ModeKeys.TRAIN
-    optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.01)
-    train_op = optimizer.minimize(loss,global_step=tf.train.get_global_step())
-    return tf.estimator.EstimatorSpec(mode,loss=loss,train_op=train_op)
     
 #------------------------------------------ costom estimator------------------------------------#
 
@@ -203,14 +202,11 @@ print(evaluation)
 #predict mode
 predictions = estimator.predict(input_fn=predict_input_fn)
 for pre_dict in predictions:
-    class_id = pre_dict['class_ids']
-    probability = pre_dict['probabilities'][class_id]
-    label = pre_dict['label']
+    probability = pre_dict['probabilities']
+    label = pre_dict['classes']
     print("================")
-    print('class_id: ')
-    print(class_id)
     print("probability: ")
     print(probability)
-    print("label: ")
+    print("classes: ")
     print(label)
 
