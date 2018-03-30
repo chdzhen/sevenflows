@@ -155,7 +155,7 @@ def cnn_model_fn(features,mode):
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
     
     labels = tf.to_int32(features['label'],name='label_to_int32')
-    #labels = tf.one_hot(labels, 17,on_value=1.0, off_value=0.0,axis=-1)
+   
     # Calculate Loss (for both TRAIN and EVAL modes)
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
